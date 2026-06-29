@@ -1390,7 +1390,7 @@ function doPrint() {
   graphSec.classList.add('visible');
   if (patient) drawGraphs();
 
-  requestAnimationFrame(() => {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     const rightImg = document.getElementById('right-graph').toDataURL('image/png');
     const leftImg  = document.getElementById('left-graph').toDataURL('image/png');
     if (!wasVisible) graphSec.classList.remove('visible');
@@ -1422,7 +1422,7 @@ function doPrint() {
     </div>`;
 
     window.print();
-  }); // end requestAnimationFrame
+  })); // end double requestAnimationFrame
 }
 
 document.getElementById('print-btn').addEventListener('click', doPrint);
