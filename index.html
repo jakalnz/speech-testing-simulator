@@ -701,6 +701,9 @@ function buildPICurve(earData) {
   // peakLevel: where the logistic reaches ~99% of piMax
   const peakLevel = L50 + Math.log(99) / k;
 
+  // Value the logistic reaches at peakLevel (used as rollover start to avoid discontinuity)
+  const ascAtPeak = piMax / (1 + Math.exp(-k * (peakLevel - L50)));
+
   return function(level) {
     if (acFloor != null && level < acFloor) return 0;
 
@@ -712,7 +715,7 @@ function buildPICurve(earData) {
     if (score90 < piMax && level > peakLevel && peakLevel < 90) {
       if (level >= 90) return score90;
       const frac = (level - peakLevel) / (90 - peakLevel);
-      const rolled = piMax - (piMax - score90) * frac;
+      const rolled = ascAtPeak - (ascAtPeak - score90) * frac;
       return Math.max(score90, rolled);
     }
     return cappedAsc;
@@ -1103,7 +1106,7 @@ function drawPIGraph(canvasId, legendId, earData, earSide, patient) {
   ctx.lineWidth = 2;
   ctx.beginPath();
   let first = true;
-  for (let db = -10; db <= 100; db += 0.5) {
+  for (let db = -10; db <= 90; db += 0.5) {
     const s = Math.max(0, Math.min(100, curve(db)));
     const x = xToP(db), y = yToP(s);
     if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
