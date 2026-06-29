@@ -1384,18 +1384,13 @@ function doPrint() {
           <td><strong>${p.score}%</strong></td><td>${p.notes}</td>
         </tr>`).join('');
 
-  // Make graphs section visible so canvases lay out, draw, then capture after a frame
-  const graphSec = document.getElementById('graphs-section');
-  const wasVisible = graphSec.classList.contains('visible');
-  graphSec.classList.add('visible');
+  // Draw graphs into canvases (canvas drawing is synchronous regardless of CSS visibility)
   if (patient) drawGraphs();
+  const rightImg = document.getElementById('right-graph').toDataURL('image/png');
+  const leftImg  = document.getElementById('left-graph').toDataURL('image/png');
 
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    const rightImg = document.getElementById('right-graph').toDataURL('image/png');
-    const leftImg  = document.getElementById('left-graph').toDataURL('image/png');
-    if (!wasVisible) graphSec.classList.remove('visible');
-
-    document.getElementById('print-area').innerHTML = `
+  // Set print area HTML synchronously
+  document.getElementById('print-area').innerHTML = `
     <h1>Speech Testing Simulator — Results</h1>
     <div class="print-meta">
       <span><strong>Student:</strong> ${studentName}</span>
@@ -1421,8 +1416,10 @@ function doPrint() {
       </div>
     </div>`;
 
+  // Defer window.print() until the browser has painted the updated #print-area
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     window.print();
-  })); // end double requestAnimationFrame
+  }));
 }
 
 document.getElementById('print-btn').addEventListener('click', doPrint);
