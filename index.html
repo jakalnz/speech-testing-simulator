@@ -278,7 +278,8 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
 
   <!-- Center strip -->
   <div id="center-strip">
-    <div class="masking-req-badge" id="masking-badge"></div>
+    <div class="masking-req-badge" id="masking-required-badge"></div>
+    <div class="masking-req-badge" id="masking-sufficient-badge"></div>
     <button id="present-btn">Present List</button>
     <div style="font-size:10px;color:#666;text-align:center;margin-top:4px">List <span id="list-count">0</span> presented</div>
   </div>
@@ -406,6 +407,14 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
           </div>
           <div class="field-note">*Used for calculating cross hearing if masking not applied when testing the left ear</div>
           <div class="field-row" style="margin-top:8px">
+            <label>Best AC threshold†</label>
+            <input type="number" id="right-bestac" min="-10" max="120"> <span style="font-size:11px">dB HL</span>
+          </div>
+          <div class="field-row">
+            <label>Largest significant AB gap‡</label>
+            <input type="number" id="right-abgap" min="0" max="70" step="5"> <span style="font-size:11px">dB</span>
+          </div>
+          <div class="field-row" style="margin-top:8px">
             <label>PI Max (right)</label>
             <input type="number" id="right-pimax" min="0" max="100" step="1"> <span style="font-size:11px">%</span>
           </div>
@@ -428,6 +437,14 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
           </div>
           <div class="field-note">*Used for calculating cross hearing if masking not applied when testing the right ear</div>
           <div class="field-row" style="margin-top:8px">
+            <label>Best AC threshold†</label>
+            <input type="number" id="left-bestac" min="-10" max="120"> <span style="font-size:11px">dB HL</span>
+          </div>
+          <div class="field-row">
+            <label>Largest significant AB gap‡</label>
+            <input type="number" id="left-abgap" min="0" max="70" step="5"> <span style="font-size:11px">dB</span>
+          </div>
+          <div class="field-row" style="margin-top:8px">
             <label>PI Max (left)</label>
             <input type="number" id="left-pimax" min="0" max="100" step="1"> <span style="font-size:11px">%</span>
           </div>
@@ -436,6 +453,10 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
             <input type="number" id="left-score90" min="0" max="100" step="1"> <span style="font-size:11px">%</span>
           </div>
         </div>
+      </div>
+      <div style="font-size:10px;color:#888;font-style:italic;margin-top:8px">
+        †Best AC threshold guides where the PI curve rises from zero on the graph.<br>
+        ‡Largest significant AB gap (dB) of <em>this</em> ear — used to determine required masking level when this ear is the non-test ear: PL − IAA + 10 + AB gap.
       </div>
     </div>
   </div>
@@ -485,22 +506,22 @@ const DEFAULT_PATIENTS = [
     id: 'default-a', name: 'Patient A',
     rightEar: {
       dataPoints: [{level:20,score:50},{level:30,score:87},{level:40,score:100}],
-      bestBC: 5, piMax: 100, score90: 100
+      bestBC: 5, bestAC: 15, largestABGap: 10, piMax: 100, score90: 100
     },
     leftEar: {
       dataPoints: [{level:45,score:23},{level:60,score:77},{level:75,score:100}],
-      bestBC: 10, piMax: 100, score90: 97
+      bestBC: 10, bestAC: 40, largestABGap: 30, piMax: 100, score90: 97
     }
   },
   {
     id: 'default-b', name: 'Patient B',
     rightEar: {
       dataPoints: [{level:30,score:40},{level:50,score:80},{level:70,score:97}],
-      bestBC: 25, piMax: 97, score90: 80
+      bestBC: 25, bestAC: 25, largestABGap: 0, piMax: 97, score90: 80
     },
     leftEar: {
       dataPoints: [{level:20,score:53},{level:35,score:90}],
-      bestBC: 15, piMax: 97, score90: 97
+      bestBC: 15, bestAC: 15, largestABGap: 0, piMax: 97, score90: 97
     }
   }
 ];
@@ -542,12 +563,12 @@ function fitLogistic(dataPoints, piMax) {
 }
 
 function buildPICurve(earData) {
-  const { dataPoints, piMax, score90 } = earData;
+  const { dataPoints, piMax, score90, bestAC } = earData;
   const validPts = (dataPoints || []).filter(p => p.level != null && p.score != null && p.level !== '' && p.score !== '');
+  const acFloor = (bestAC != null && bestAC !== '') ? parseFloat(bestAC) : null;
 
   if (validPts.length === 0) {
-    // Default flat curve
-    return (level) => level >= 40 ? piMax : 0;
+    return (level) => (acFloor != null && level < acFloor) ? 0 : (level >= 40 ? piMax : 0);
   }
 
   const { L50, k } = fitLogistic(validPts, piMax);
@@ -556,6 +577,8 @@ function buildPICurve(earData) {
   const peakLevel = L50 + Math.log(99) / k;
 
   return function(level) {
+    if (acFloor != null && level < acFloor) return 0;
+
     // Ascending logistic
     const asc = piMax / (1 + Math.exp(-k * (level - L50)));
     const cappedAsc = Math.min(asc, piMax);
@@ -611,18 +634,26 @@ function checkMasking() {
   const nonTestEar = ch1Info.ear === 'Right' ? 'leftEar' : 'rightEar';
   const nonTestData = patient[nonTestEar];
   const BC_NTE = nonTestData.bestBC;
+  const ABGap_NTE = parseFloat(nonTestData.largestABGap) || 0;
 
   const crossover = state.ch1.level - ch1Info.iaa;
   const required = crossover >= BC_NTE;
+
+  // Required masking level: PL - IAA + 10 + largest significant AB gap of NTE
+  const requiredMaskingLevel = crossover + 10 + ABGap_NTE;
 
   // Check CH2 masking: must have level > 0 and matching transducer type (opposite ear, same type)
   const ch2Info = getTransducerInfo(state.ch2.transducer);
   const typesMatch = ch1Info.type === ch2Info.type;
   const earsOpposite = ch1Info.ear !== ch2Info.ear;
   const mismatch = !typesMatch || !earsOpposite;
-  const applied = state.maskingOn && state.ch2.level > 0 && !mismatch;
+  const ch2Level = state.ch2.level;
+  const applied = state.maskingOn && ch2Level > 0 && !mismatch;
 
-  return { required, applied, mismatch: state.ch2.level > 0 && mismatch, crossover };
+  // Sufficient masking: applied level meets or exceeds required masking level
+  const sufficientMasking = applied && ch2Level >= requiredMaskingLevel;
+
+  return { required, applied, sufficientMasking, requiredMaskingLevel, mismatch: ch2Level > 0 && mismatch, crossover };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -639,7 +670,7 @@ function presentList() {
   const testEarData = patient[testEarKey];
   const nonTestEarData = patient[nonTestEarKey];
 
-  const { required, applied, mismatch, crossover } = checkMasking();
+  const { required, applied, sufficientMasking, mismatch, crossover } = checkMasking();
   const PL = state.ch1.level;
 
   const testCurve = buildPICurve(testEarData);
@@ -647,24 +678,25 @@ function presentList() {
 
   let score, notes = '', maskingDisplay = '--', rowClass = '';
 
-  if (!required || applied) {
-    // Test ear responds; masking prevents cross-hearing if required
+  if (!required || sufficientMasking) {
+    // Test ear responds; sufficient masking prevents cross-hearing if required
     const theoretical = testCurve(PL);
     score = snapToAchievable(theoretical);
-    if (applied && required) {
+    if (sufficientMasking && required) {
       maskingDisplay = state.ch2.level;
       rowClass = 'row-masked';
       notes = 'Masked';
     }
   } else {
-    // Cross-hearing: best ear responds
+    // Cross-hearing: best ear responds (masking absent or insufficient)
     const scoreTest = testCurve(PL);
     const PL_NTE = crossover + 10; // PL - IAA + 10
     const scoreNTE = nonTestCurve(PL_NTE);
     const theoretical = Math.max(scoreTest, scoreNTE);
     score = snapToAchievable(theoretical);
     rowClass = 'row-cross';
-    notes = `Cross-hearing (NTE @ ${PL_NTE} dB HL)`;
+    const reason = (applied && !sufficientMasking) ? 'insufficient masking' : 'no masking';
+    notes = `Cross-hearing (NTE @ ${PL_NTE} dB HL, ${reason})`;
   }
 
   state.presentations.push({
@@ -792,20 +824,42 @@ function updateChannelDisplays() {
 }
 
 function updateMaskingBadge() {
-  const badge = document.getElementById('masking-badge');
-  if (!state.hintsOn) { badge.textContent = ''; badge.className = 'masking-req-badge'; return; }
+  const reqBadge = document.getElementById('masking-required-badge');
+  const sufBadge = document.getElementById('masking-sufficient-badge');
+
+  const clear = () => {
+    reqBadge.textContent = ''; reqBadge.className = 'masking-req-badge';
+    sufBadge.textContent = ''; sufBadge.className = 'masking-req-badge';
+  };
+
+  if (!state.hintsOn) { clear(); return; }
   const patient = getCurrentPatient();
-  if (!patient) { badge.textContent = ''; badge.className = 'masking-req-badge'; return; }
-  const { required, applied } = checkMasking();
-  if (required && !applied) {
-    badge.textContent = '⚠ Masking Required';
-    badge.className = 'masking-req-badge required';
-  } else if (required && applied) {
-    badge.textContent = '✓ Masking Applied';
-    badge.className = 'masking-req-badge ok';
+  if (!patient) { clear(); return; }
+
+  const { required, applied, sufficientMasking, requiredMaskingLevel } = checkMasking();
+
+  // Badge 1: is masking required?
+  if (required) {
+    reqBadge.textContent = '⚠ Masking required';
+    reqBadge.className = 'masking-req-badge required';
   } else {
-    badge.textContent = 'No masking needed';
-    badge.className = 'masking-req-badge ok';
+    reqBadge.textContent = '✓ No masking needed';
+    reqBadge.className = 'masking-req-badge ok';
+  }
+
+  // Badge 2: is enough masking applied? (only shown when masking is required)
+  if (!required) {
+    sufBadge.textContent = '';
+    sufBadge.className = 'masking-req-badge';
+  } else if (!applied) {
+    sufBadge.textContent = `⚠ None applied (need ≥${requiredMaskingLevel} dB HL)`;
+    sufBadge.className = 'masking-req-badge required';
+  } else if (!sufficientMasking) {
+    sufBadge.textContent = `⚠ Too low (need ≥${requiredMaskingLevel} dB HL)`;
+    sufBadge.className = 'masking-req-badge required';
+  } else {
+    sufBadge.textContent = `✓ Sufficient (≥${requiredMaskingLevel} dB HL)`;
+    sufBadge.className = 'masking-req-badge ok';
   }
 }
 
@@ -1017,6 +1071,8 @@ function loadPatientForEdit(id) {
         <td><input type="number" min="0" max="100" step="1" value="${dp.score !== undefined && dp.score !== '' ? dp.score : ''}" id="${side}-dp-score-${i}"></td>
       </tr>`).join('');
     document.getElementById(side + '-bc').value = data.bestBC ?? '';
+    document.getElementById(side + '-bestac').value = data.bestAC ?? '';
+    document.getElementById(side + '-abgap').value = data.largestABGap ?? '';
     document.getElementById(side + '-pimax').value = data.piMax ?? '';
     document.getElementById(side + '-score90').value = data.score90 ?? '';
   }
@@ -1026,8 +1082,8 @@ function newPatient() {
   const id = 'p-' + Date.now();
   const p = {
     id, name: 'New Patient',
-    rightEar: { dataPoints: [], bestBC: 0, piMax: 100, score90: 100 },
-    leftEar:  { dataPoints: [], bestBC: 0, piMax: 100, score90: 100 }
+    rightEar: { dataPoints: [], bestBC: 0, bestAC: null, largestABGap: 0, piMax: 100, score90: 100 },
+    leftEar:  { dataPoints: [], bestBC: 0, bestAC: null, largestABGap: 0, piMax: 100, score90: 100 }
   };
   state.patients.push(p);
   renderAdminPatientList();
@@ -1067,6 +1123,9 @@ function savePatient() {
     const earKey = side + 'Ear';
     p[earKey].dataPoints = readDataPoints(side);
     p[earKey].bestBC = parseFloat(document.getElementById(`${side}-bc`).value) || 0;
+    const acVal = document.getElementById(`${side}-bestac`).value;
+    p[earKey].bestAC = acVal !== '' ? parseFloat(acVal) : null;
+    p[earKey].largestABGap = parseFloat(document.getElementById(`${side}-abgap`).value) || 0;
     p[earKey].piMax  = parseFloat(document.getElementById(`${side}-pimax`).value) || 100;
     p[earKey].score90 = parseFloat(document.getElementById(`${side}-score90`).value) || 100;
     // Enforce piMax >= all data points
@@ -1101,9 +1160,11 @@ function normaliseEar(ear) {
       .filter(p => p != null && p.level !== undefined && p.score !== undefined)
       .map(p => ({ level: parseFloat(p.level), score: parseFloat(p.score) }))
       .filter(p => !isNaN(p.level) && !isNaN(p.score)),
-    bestBC:   parseFloat(ear?.bestBC)   || 0,
-    piMax:    parseFloat(ear?.piMax)    || 100,
-    score90:  parseFloat(ear?.score90)  || 100,
+    bestBC:       parseFloat(ear?.bestBC)       || 0,
+    bestAC:       ear?.bestAC != null ? parseFloat(ear.bestAC) : null,
+    largestABGap: parseFloat(ear?.largestABGap) || 0,
+    piMax:        parseFloat(ear?.piMax)        || 100,
+    score90:      parseFloat(ear?.score90)      || 100,
   };
 }
 
