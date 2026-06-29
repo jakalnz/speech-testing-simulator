@@ -1374,10 +1374,11 @@ function doPrint() {
   const timerVal = formatTime(state.timer.seconds);
   const dateStr = new Date().toLocaleDateString();
 
-  // Ensure graphs are drawn so canvases have content
-  if (patient) {
-    drawGraphs();
-  }
+  // Ensure graphs are drawn — briefly show the section so canvases render at full size
+  const graphSec = document.getElementById('graphs-section');
+  const wasVisible = graphSec.classList.contains('visible');
+  graphSec.classList.add('visible');
+  if (patient) drawGraphs();
 
   // Table rows — always include notes for print
   const tableRows = state.presentations.length === 0
@@ -1389,9 +1390,10 @@ function doPrint() {
           <td><strong>${p.score}%</strong></td><td>${p.notes}</td>
         </tr>`).join('');
 
-  // Capture graph canvases as data URLs
+  // Capture graph canvases as data URLs, then restore section visibility
   const rightImg = document.getElementById('right-graph').toDataURL('image/png');
   const leftImg  = document.getElementById('left-graph').toDataURL('image/png');
+  if (!wasVisible) graphSec.classList.remove('visible');
 
   document.getElementById('print-area').innerHTML = `
     <h1>Speech Testing Simulator — Results</h1>
