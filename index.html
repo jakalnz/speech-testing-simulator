@@ -387,7 +387,12 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
       </div>
     </div>
     <div id="patient-editor">
-      <h3>Edit Patient</h3>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <h3 style="margin:0">Edit Patient</h3>
+        <button class="btn-save" id="save-patient-btn">Save Patient</button>
+        <button class="btn-reset" id="reset-defaults-btn">Reset Defaults</button>
+        <span class="admin-msg" id="admin-msg"></span>
+      </div>
       <div class="name-row">
         <label>Name:</label>
         <input type="text" id="edit-name" placeholder="Patient name">
@@ -461,9 +466,6 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
     </div>
   </div>
   <div id="admin-footer">
-    <button class="btn-save" id="save-patient-btn">Save Patient</button>
-    <button class="btn-reset" id="reset-defaults-btn">Reset Defaults</button>
-    <span class="admin-msg" id="admin-msg"></span>
     <input type="file" id="json-import-input" accept=".json">
   </div>
 </div>
