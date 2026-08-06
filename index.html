@@ -439,7 +439,7 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
 <!-- Bottom bar -->
 <div id="bottom-bar">
   <button id="show-graphs-btn">SHOW GRAPHS</button>
-  <button id="hints-btn">Hints: ON</button>
+  <button id="hints-btn" class="off">Hints: OFF</button>
   <button id="print-btn">&#128438; Print / PDF</button>
   <button id="admin-btn">&#9881; Admin</button>
   <button id="import-btn">&#8593; Import Patients</button>
@@ -677,7 +677,9 @@ let state = {
   timer: { running: false, seconds: 0, interval: null },
   presentations: [],
   showGraphs: false,
-  hintsOn: true,
+  hintsOn: false,
+  hintsUsed: false,
+  graphsUsed: false,
   maskingOn: false,
   editingPatientId: null
 };
@@ -807,6 +809,12 @@ function checkMasking() {
 // ═══════════════════════════════════════════════════════════
 
 function presentList() {
+  const nameInput = document.getElementById('student-name');
+  if (!nameInput.value.trim()) {
+    alert('Please enter your name first.');
+    nameInput.focus();
+    return;
+  }
   const patient = getCurrentPatient();
   if (!patient) { alert('Please select a patient first.'); return; }
 
@@ -892,6 +900,13 @@ function toggleTimer() {
     btn.textContent = 'STOP';
     btn.classList.add('running');
   }
+}
+
+function maybeAutoStartTimer() {
+  if (state.timer.running) return;
+  const hasName = document.getElementById('student-name').value.trim().length > 0;
+  const hasPatient = !!state.currentPatientId;
+  if (hasName && hasPatient) toggleTimer();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1390,7 +1405,10 @@ document.getElementById('patient-select').addEventListener('change', (e) => {
   state.currentPatientId = e.target.value || null;
   updateMaskingBadge();
   if (state.showGraphs) drawGraphs();
+  maybeAutoStartTimer();
 });
+
+document.getElementById('student-name').addEventListener('input', maybeAutoStartTimer);
 
 document.getElementById('start-btn').addEventListener('click', toggleTimer);
 
@@ -1398,6 +1416,10 @@ document.getElementById('present-btn').addEventListener('click', presentList);
 
 document.getElementById('show-graphs-btn').addEventListener('click', () => {
   const sec = document.getElementById('graphs-section');
+  if (!state.showGraphs) {
+    if (!confirm('Turning on graphs is equivalent to revealing the answer and will be recorded in the printout. Are you sure?')) return;
+    state.graphsUsed = true;
+  }
   state.showGraphs = !state.showGraphs;
   sec.classList.toggle('visible', state.showGraphs);
   if (state.showGraphs) drawGraphs();
@@ -1430,6 +1452,7 @@ document.getElementById('show-graphs-btn').addEventListener('click', () => {
 
 document.getElementById('hints-btn').addEventListener('click', () => {
   state.hintsOn = !state.hintsOn;
+  if (state.hintsOn) state.hintsUsed = true;
   const btn = document.getElementById('hints-btn');
   btn.textContent = state.hintsOn ? 'Hints: ON' : 'Hints: OFF';
   btn.classList.toggle('off', !state.hintsOn);
@@ -1562,6 +1585,8 @@ function doPrint() {
       <span><strong>Patient:</strong> ${patientName}</span>
       <span><strong>Date:</strong> ${dateStr}</span>
       <span><strong>Test duration:</strong> ${timerVal}</span>
+      <span><strong>Hints used:</strong> ${state.hintsUsed ? 'Yes' : 'No'}</span>
+      <span><strong>Graphs used:</strong> ${state.graphsUsed ? 'Yes' : 'No'}</span>
     </div>
     <table>
       <thead>
