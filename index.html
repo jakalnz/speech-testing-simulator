@@ -1590,7 +1590,7 @@ function doPrint() {
   const now = new Date();
   const isoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const sanitize = s => s.trim().replace(/\s+/g, '_').replace(/[/\\:*?"<>|]/g, '_');
-  const suggestedTitle = `history-sim ${sanitize(patientName)} ${sanitize(studentName)} ${isoDate}`;
+  const suggestedTitle = `speech-sim ${sanitize(patientName)} ${sanitize(studentName)} ${isoDate}`;
   const originalTitle = document.title;
   document.title = suggestedTitle;
   window.addEventListener('afterprint', () => { document.title = originalTitle; }, { once: true });
