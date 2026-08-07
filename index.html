@@ -696,7 +696,7 @@ let state = {
   currentPatientId: null,
   ch1: { transducer: 'phone_right', level: 30, input: '1' },
   ch2: { transducer: 'phone_left', level: 0 },
-  timer: { running: false, seconds: 0, interval: null },
+  timer: { running: false, seconds: 0, realSeconds: 0, interval: null },
   presentations: [],
   showGraphs: false,
   hintsOn: false,
@@ -916,6 +916,7 @@ function toggleTimer() {
   } else {
     state.timer.interval = setInterval(() => {
       state.timer.seconds++;
+      state.timer.realSeconds++;
       updateTimerDisplay();
     }, 1000);
     state.timer.running = true;
@@ -1582,7 +1583,17 @@ function doPrint() {
   const studentName = document.getElementById('student-name').value.trim() || '(unnamed)';
   const patientName = patient ? patient.name : '(no patient selected)';
   const timerVal = formatTime(state.timer.seconds);
+  const actualVal = formatTime(state.timer.realSeconds);
   const dateStr = new Date().toLocaleDateString();
+
+  // Suggest a filename for the browser's Save-as-PDF dialog via document.title
+  const now = new Date();
+  const isoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const sanitize = s => s.trim().replace(/\s+/g, '_').replace(/[/\\:*?"<>|]/g, '_');
+  const suggestedTitle = `history-sim ${sanitize(patientName)} ${sanitize(studentName)} ${isoDate}`;
+  const originalTitle = document.title;
+  document.title = suggestedTitle;
+  window.addEventListener('afterprint', () => { document.title = originalTitle; }, { once: true });
 
   // Table rows — always include notes for print
   const tableRows = state.presentations.length === 0
@@ -1606,7 +1617,8 @@ function doPrint() {
       <span><strong>Student:</strong> ${studentName}</span>
       <span><strong>Patient:</strong> ${patientName}</span>
       <span><strong>Date:</strong> ${dateStr}</span>
-      <span><strong>Test duration:</strong> ${timerVal}</span>
+      <span><strong>Actual duration:</strong> ${actualVal}</span>
+      <span><strong>Simulated duration:</strong> ${timerVal}</span>
       <span><strong>Hints used:</strong> ${state.hintsUsed ? 'Yes' : 'No'}</span>
       <span><strong>Graphs used:</strong> ${state.graphsUsed ? 'Yes' : 'No'}</span>
     </div>
