@@ -858,11 +858,6 @@ function presentList() {
     // Test ear responds; sufficient masking prevents cross-hearing if required
     const theoretical = testCurve(PL);
     score = snapToAchievable(theoretical);
-    if (sufficientMasking && required) {
-      maskingDisplay = state.ch2.level;
-      rowClass = 'row-masked';
-      notes = 'Masked';
-    }
   } else {
     // Cross-hearing: best ear responds (masking absent or insufficient)
     const scoreTest = testCurve(PL);
@@ -873,6 +868,16 @@ function presentList() {
     rowClass = 'row-cross';
     const reason = (applied && !sufficientMasking) ? 'insufficient masking' : 'no masking';
     notes = `Cross-hearing (NTE @ ${PL_NTE} dB HL, ${reason})`;
+  }
+
+  if (applied) {
+    maskingDisplay = state.ch2.level;
+    if (!(required && !sufficientMasking)) {
+      // Cross-hearing branch already set a more detailed rowClass/notes for the
+      // "applied but insufficient" case; only override for the masked case.
+      rowClass = 'row-masked';
+      notes = 'Masked';
+    }
   }
 
   state.presentations.push({
