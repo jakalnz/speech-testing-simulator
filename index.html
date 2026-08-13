@@ -512,7 +512,13 @@ canvas.pi-graph { background: #f8f0ee; display: block; width: 100%; }
       <div id="admin-patient-list"></div>
       <div id="patient-list-btns">
         <button class="btn-new" id="new-patient-btn">+ New</button>
-        <button class="btn-export" id="export-btn">&#8595; Export JSON</button>
+        <div id="export-menu-wrap" style="position:relative;display:inline-block">
+          <button class="btn-export" id="export-btn">&#8595; Export ▾</button>
+          <div id="export-menu" class="hidden" style="position:absolute;top:100%;left:0;z-index:20;background:#222;border:1px solid #555;border-radius:4px;min-width:160px;box-shadow:0 4px 10px rgba(0,0,0,.4)">
+            <button class="export-menu-item" id="export-json-btn" style="display:block;width:100%;text-align:left;padding:8px 10px;background:none;border:none;color:#eee;cursor:pointer">Export as JSON</button>
+            <button class="export-menu-item" id="export-link-btn" style="display:block;width:100%;text-align:left;padding:8px 10px;background:none;border:none;color:#eee;cursor:pointer">Copy Share Link</button>
+          </div>
+        </div>
         <button class="btn-import" id="admin-import-btn">&#8593; Import JSON</button>
       </div>
     </div>
@@ -1328,17 +1334,80 @@ function savePatient() {
   setTimeout(() => msg.textContent = '', 2000);
 }
 
-function exportPatients() {
-  const json = JSON.stringify(state.patients, null, 2);
+function sanitizeFilename(s) {
+  return s.trim().replace(/\s+/g, '_').replace(/[/\\:*?"<>|]/g, '_');
+}
+
+function getActivePatient() {
+  const id = state.editingPatientId || state.currentPatientId;
+  return id ? state.patients.find(p => p.id === id) : null;
+}
+
+function showAdminMsg(text) {
+  const msg = document.getElementById('admin-msg');
+  msg.textContent = text;
+  setTimeout(() => msg.textContent = '', 2500);
+}
+
+function exportPatientAsJSON() {
+  const patient = getActivePatient();
+  if (!patient) { showAdminMsg('No active case to export.'); return; }
+  const json = JSON.stringify([patient], null, 2);
   const blob = new Blob([json], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'patients.json';
+  a.download = `${sanitizeFilename(patient.name || 'case')}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function exportPatientAsLink() {
+  const patient = getActivePatient();
+  if (!patient) { showAdminMsg('No active case to export.'); return; }
+  const json = JSON.stringify(patient);
+  const encoded = btoa(unescape(encodeURIComponent(json)));
+  const url = `${location.origin}${location.pathname}?case=${encoded}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => showAdminMsg('Share link copied to clipboard.'))
+      .catch(() => showAdminMsg(url));
+  } else {
+    showAdminMsg(url);
+  }
+}
+
+function importPatientFromLink() {
+  const params = new URLSearchParams(location.search);
+  const encoded = params.get('case');
+  if (!encoded) return;
+  try {
+    const json = decodeURIComponent(escape(atob(encoded)));
+    const p = JSON.parse(json);
+    if (typeof p !== 'object' || p === null) throw new Error('Invalid case data');
+    const patient = {
+      id:       (typeof p.id === 'string' && p.id) ? p.id : ('p-' + Date.now()),
+      name:     typeof p.name === 'string' ? p.name : 'Shared Patient',
+      rightEar: normaliseEar(p.rightEar),
+      leftEar:  normaliseEar(p.leftEar),
+    };
+    const existingIdx = state.patients.findIndex(x => x.id === patient.id);
+    if (existingIdx >= 0) state.patients[existingIdx] = patient;
+    else state.patients.push(patient);
+    state.currentPatientId = patient.id;
+    renderAdminPatientList();
+    renderPatientDropdown();
+    document.getElementById('patient-select').value = patient.id;
+    updateMaskingBadge();
+    if (state.showGraphs) drawGraphs();
+  } catch (e) {
+    alert('Failed to load shared case: ' + e.message);
+  } finally {
+    const cleanUrl = `${location.origin}${location.pathname}`;
+    history.replaceState(null, '', cleanUrl);
+  }
 }
 
 function normaliseEar(ear) {
@@ -1558,7 +1627,22 @@ document.getElementById('back-to-sim-btn').addEventListener('click', () => {
 });
 document.getElementById('new-patient-btn').addEventListener('click', newPatient);
 document.getElementById('save-patient-btn').addEventListener('click', savePatient);
-document.getElementById('export-btn').addEventListener('click', exportPatients);
+document.getElementById('export-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('export-menu').classList.toggle('hidden');
+});
+document.getElementById('export-json-btn').addEventListener('click', () => {
+  document.getElementById('export-menu').classList.add('hidden');
+  exportPatientAsJSON();
+});
+document.getElementById('export-link-btn').addEventListener('click', () => {
+  document.getElementById('export-menu').classList.add('hidden');
+  exportPatientAsLink();
+});
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('export-menu-wrap');
+  if (wrap && !wrap.contains(e.target)) document.getElementById('export-menu').classList.add('hidden');
+});
 document.getElementById('reset-defaults-btn').addEventListener('click', resetDefaults);
 
 // Import (admin panel)
@@ -1688,7 +1772,8 @@ function init() {
       state.patients = JSON.parse(JSON.stringify(DEFAULT_PATIENTS));
       setPatientSource('default');
       renderPatientDropdown();
-    });
+    })
+    .finally(() => importPatientFromLink());
 }
 
 function setPatientSource(source) {
