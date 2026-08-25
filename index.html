@@ -1365,15 +1365,62 @@ function exportPatientAsJSON() {
   URL.revokeObjectURL(url);
 }
 
+function encodeBase64Url(str) {
+  const b64 = btoa(unescape(encodeURIComponent(str)));
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function decodeBase64Url(str) {
+  let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  return decodeURIComponent(escape(atob(b64)));
+}
+
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+function compactEar(ear) {
+  const flatPts = [];
+  ear.dataPoints.forEach(p => { flatPts.push(round1(p.level), round1(p.score)); });
+  return [
+    round1(ear.bestBC),
+    ear.bestAC != null ? round1(ear.bestAC) : null,
+    round1(ear.largestABGap),
+    round1(ear.piMax),
+    round1(ear.score90),
+    ...flatPts,
+  ];
+}
+
+function denormaliseCompactEar(arr) {
+  if (!Array.isArray(arr)) return {};
+  const [bestBC, bestAC, largestABGap, piMax, score90, ...flatPts] = arr;
+  const dataPoints = [];
+  for (let i = 0; i < flatPts.length - 1; i += 2) {
+    dataPoints.push({ level: flatPts[i], score: flatPts[i + 1] });
+  }
+  return { bestBC, bestAC, largestABGap, piMax, score90, dataPoints };
+}
+
 function exportPatientAsLink() {
   const patient = getActivePatient();
   if (!patient) { showAdminMsg('No active case to export.'); return; }
-  const json = JSON.stringify(patient);
-  const encoded = btoa(unescape(encodeURIComponent(json)));
+  const compact = [
+    patient.id,
+    patient.name,
+    compactEar(normaliseEar(patient.rightEar)),
+    compactEar(normaliseEar(patient.leftEar)),
+  ];
+  const json = JSON.stringify(compact);
+  const encoded = encodeBase64Url(json);
   const url = `${location.origin}${location.pathname}?case=${encoded}`;
+  const message = url.length > 255
+    ? `Share link copied to clipboard (${url.length} chars — longer than usual).`
+    : 'Share link copied to clipboard.';
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url)
-      .then(() => showAdminMsg('Share link copied to clipboard.'))
+      .then(() => showAdminMsg(message))
       .catch(() => showAdminMsg(url));
   } else {
     showAdminMsg(url);
@@ -1385,15 +1432,26 @@ function importPatientFromLink() {
   const encoded = params.get('case');
   if (!encoded) return;
   try {
-    const json = decodeURIComponent(escape(atob(encoded)));
+    const json = decodeBase64Url(encoded);
     const p = JSON.parse(json);
-    if (typeof p !== 'object' || p === null) throw new Error('Invalid case data');
-    const patient = {
-      id:       (typeof p.id === 'string' && p.id) ? p.id : ('p-' + Date.now()),
-      name:     typeof p.name === 'string' ? p.name : 'Shared Patient',
-      rightEar: normaliseEar(p.rightEar),
-      leftEar:  normaliseEar(p.leftEar),
-    };
+    if (p === null || typeof p !== 'object') throw new Error('Invalid case data');
+    let patient;
+    if (Array.isArray(p)) {
+      const [id, name, rightEar, leftEar] = p;
+      patient = {
+        id:       (typeof id === 'string' && id) ? id : ('p-' + Date.now()),
+        name:     typeof name === 'string' ? name : 'Shared Patient',
+        rightEar: normaliseEar(denormaliseCompactEar(rightEar)),
+        leftEar:  normaliseEar(denormaliseCompactEar(leftEar)),
+      };
+    } else {
+      patient = {
+        id:       (typeof p.id === 'string' && p.id) ? p.id : ('p-' + Date.now()),
+        name:     typeof p.name === 'string' ? p.name : 'Shared Patient',
+        rightEar: normaliseEar(p.rightEar),
+        leftEar:  normaliseEar(p.leftEar),
+      };
+    }
     const existingIdx = state.patients.findIndex(x => x.id === patient.id);
     if (existingIdx >= 0) state.patients[existingIdx] = patient;
     else state.patients.push(patient);
