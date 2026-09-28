@@ -1322,8 +1322,8 @@ function savePatient() {
     const acVal = document.getElementById(`${side}-bestac`).value;
     p[earKey].bestAC = acVal !== '' ? parseFloat(acVal) : null;
     p[earKey].largestABGap = parseFloat(document.getElementById(`${side}-abgap`).value) || 0;
-    p[earKey].piMax  = parseFloat(document.getElementById(`${side}-pimax`).value) || 100;
-    p[earKey].score90 = parseFloat(document.getElementById(`${side}-score90`).value) || 100;
+    p[earKey].piMax  = numOr(document.getElementById(`${side}-pimax`).value, 100);
+    p[earKey].score90 = numOr(document.getElementById(`${side}-score90`).value, 100);
     // Enforce piMax >= all data points
     const maxDP = Math.max(0, ...p[earKey].dataPoints.map(d => d.score));
     if (p[earKey].piMax < maxDP) p[earKey].piMax = maxDP;
@@ -1469,6 +1469,13 @@ function importPatientFromLink() {
   }
 }
 
+// Number from a stored field, or the fallback when missing/invalid. Unlike
+// `parseFloat(v) || fallback`, a genuine 0 (e.g. a 0% PI max) is kept.
+function numOr(v, fallback) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function normaliseEar(ear) {
   // Ensure all required fields exist with safe defaults
   const pts = Array.isArray(ear?.dataPoints) ? ear.dataPoints : [];
@@ -1477,11 +1484,11 @@ function normaliseEar(ear) {
       .filter(p => p != null && p.level !== undefined && p.score !== undefined)
       .map(p => ({ level: parseFloat(p.level), score: parseFloat(p.score) }))
       .filter(p => !isNaN(p.level) && !isNaN(p.score)),
-    bestBC:       parseFloat(ear?.bestBC)       || 0,
+    bestBC:       numOr(ear?.bestBC, 0),
     bestAC:       ear?.bestAC != null ? parseFloat(ear.bestAC) : null,
-    largestABGap: parseFloat(ear?.largestABGap) || 0,
-    piMax:        parseFloat(ear?.piMax)        || 100,
-    score90:      parseFloat(ear?.score90)      || 100,
+    largestABGap: numOr(ear?.largestABGap, 0),
+    piMax:        numOr(ear?.piMax, 100),
+    score90:      numOr(ear?.score90, 100),
   };
 }
 
